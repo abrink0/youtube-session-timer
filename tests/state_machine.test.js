@@ -197,41 +197,145 @@ describe('YouTube Session Timer - State Machine', () => {
     assert.strictEqual(mockAlarms[bg.COOLDOWN_ALARM_NAME], undefined);
   });
 
-  it('enforces lockout rule (FR-5.3): cannot modify cooldown while ACTIVE or COOLDOWN (no queueing)', async () => {
+  it('allows increasing cooldown duration at any time, but rejects decreasing in ACTIVE or COOLDOWN', async () => {
     await bg.initializeDefaults();
-    await bg.transitionToActive(10);
+    await bg.transitionToActive(10); // in ACTIVE
 
-    // Attempting to change cooldown while ACTIVE must be rejected
-    const resActive = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 10 });
-    assert.strictEqual(resActive.success, false);
-    assert.match(resActive.error, /Cannot modify cooldown duration while session is ACTIVE or in COOLDOWN/);
+    // Decreasing cooldown while ACTIVE must be rejected
+    const resActiveDec = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 10 });
+    assert.strictEqual(resActiveDec.success, false);
+    assert.match(resActiveDec.error, /Cannot decrease cooldown duration while session is ACTIVE/);
+
+    // Increasing cooldown while ACTIVE must be allowed
+    const resActiveInc = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 45 });
+    assert.strictEqual(resActiveInc.success, true);
+    assert.strictEqual(resActiveInc.globalCooldownDuration, 45);
 
     let state = await bg.getStoredState();
-    assert.strictEqual(state.globalCooldownDuration, 30);
+    assert.strictEqual(state.globalCooldownDuration, 45);
 
     // Transition to COOLDOWN
     await bg.transitionToCooldown();
+    state = await bg.getStoredState();
+    const initialCooldownEndTime = state.cooldownEndTime;
 
-    // Attempting to change cooldown while in COOLDOWN must also be rejected
-    const resCooldown = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 45 });
-    assert.strictEqual(resCooldown.success, false);
-    assert.match(resCooldown.error, /Cannot modify cooldown duration while session is ACTIVE or in COOLDOWN/);
+    // Decreasing cooldown while in COOLDOWN must be rejected
+    const resCooldownDec = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 30 });
+    assert.strictEqual(resCooldownDec.success, false);
+    assert.match(resCooldownDec.error, /Cannot decrease cooldown duration while session is COOLDOWN/);
+
+    // Increasing cooldown while in COOLDOWN must be allowed and extends cooldownEndTime
+    const resCooldownInc = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 60 });
+    assert.strictEqual(resCooldownInc.success, true);
+    assert.strictEqual(resCooldownInc.globalCooldownDuration, 60);
 
     state = await bg.getStoredState();
-    assert.strictEqual(state.globalCooldownDuration, 30);
+    assert.strictEqual(state.globalCooldownDuration, 60);
+    // Cooldown extended by 15 minutes (60 - 45 = 15m = 900,000ms)
+    assert.strictEqual(state.cooldownEndTime, initialCooldownEndTime + 15 * 60 * 1000);
+    assert.strictEqual(mockAlarms[bg.COOLDOWN_ALARM_NAME].when, state.cooldownEndTime);
   });
 
-  it('allows modifying cooldown duration when in IDLE', async () => {
+  it('allows increasing and decreasing cooldown duration when in IDLE', async () => {
     await bg.initializeDefaults();
     const stateBefore = await bg.getStoredState();
     assert.strictEqual(stateBefore.state, 'IDLE');
+    assert.strictEqual(stateBefore.globalCooldownDuration, 30);
 
-    const res = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 45 });
-    assert.strictEqual(res.success, true);
-    assert.strictEqual(res.globalCooldownDuration, 45);
+    // Increase in IDLE
+    const resInc = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 45 });
+    assert.strictEqual(resInc.success, true);
+    assert.strictEqual(resInc.globalCooldownDuration, 45);
+
+    // Decrease in IDLE
+    const resDec = await sendMessage({ type: 'SET_COOLDOWN_DURATION', durationMinutes: 15 });
+    assert.strictEqual(resDec.success, true);
+    assert.strictEqual(resDec.globalCooldownDuration, 15);
 
     const stateAfter = await bg.getStoredState();
-    assert.strictEqual(stateAfter.globalCooldownDuration, 45);
+    assert.strictEqual(stateAfter.globalCooldownDuration, 15);
+  });
+
+  describe('Decreasing Remaining Time in ACTIVE Mode', () => {
+    it('allows decreasing remaining time during an active session', async () => {
+      await bg.initializeDefaults();
+      // Start session with 60 minutes (3600 seconds)
+      await sendMessage({ type: 'START_SESSION', durationMinutes: 60 });
+
+      let state = await bg.getStoredState();
+      assert.strictEqual(state.state, 'ACTIVE');
+      assert.strictEqual(state.remainingTime, 3600);
+
+      // Decrease remaining time to 30 minutes (1800 seconds)
+      const res = await sendMessage({ type: 'DECREASE_REMAINING_TIME', durationMinutes: 30 });
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.remainingTime, 1800);
+      assert.strictEqual(res.state, 'ACTIVE');
+
+      state = await bg.getStoredState();
+      assert.strictEqual(state.remainingTime, 1800);
+    });
+
+    it('allows setting remaining time to 0, triggering immediate COOLDOWN', async () => {
+      await bg.initializeDefaults();
+      await sendMessage({ type: 'START_SESSION', durationMinutes: 45 });
+
+      let state = await bg.getStoredState();
+      assert.strictEqual(state.state, 'ACTIVE');
+
+      // Set to 0 -> immediate cooldown
+      const res = await sendMessage({ type: 'DECREASE_REMAINING_TIME', durationMinutes: 0 });
+      assert.strictEqual(res.success, true);
+      assert.strictEqual(res.state, 'COOLDOWN');
+      assert.strictEqual(res.remainingTime, 0);
+      assert.ok(res.cooldownEndTime > Date.now());
+
+      state = await bg.getStoredState();
+      assert.strictEqual(state.state, 'COOLDOWN');
+      assert.ok(mockAlarms[bg.COOLDOWN_ALARM_NAME]);
+    });
+
+    it('rejects increasing or matching remaining time during ACTIVE session', async () => {
+      await bg.initializeDefaults();
+      await sendMessage({ type: 'START_SESSION', durationMinutes: 30 }); // 1800 seconds
+
+      // Attempt to increase to 40 minutes (2400 seconds)
+      const resInc = await sendMessage({ type: 'DECREASE_REMAINING_TIME', durationMinutes: 40 });
+      assert.strictEqual(resInc.success, false);
+      assert.match(resInc.error, /New remaining time must be less than current remaining time/);
+
+      // Attempt to set same time (30 minutes = 1800 seconds)
+      const resSame = await sendMessage({ type: 'DECREASE_REMAINING_TIME', durationMinutes: 30 });
+      assert.strictEqual(resSame.success, false);
+      assert.match(resSame.error, /New remaining time must be less than current remaining time/);
+
+      const state = await bg.getStoredState();
+      assert.strictEqual(state.remainingTime, 1800);
+    });
+
+    it('rejects negative remaining time', async () => {
+      await bg.initializeDefaults();
+      await sendMessage({ type: 'START_SESSION', durationMinutes: 20 });
+
+      const resNeg = await sendMessage({ type: 'DECREASE_REMAINING_TIME', durationMinutes: -5 });
+      assert.strictEqual(resNeg.success, false);
+      assert.match(resNeg.error, /Remaining time must be a non-negative number/);
+    });
+
+    it('rejects decreasing remaining time when not in ACTIVE state (IDLE or COOLDOWN)', async () => {
+      await bg.initializeDefaults();
+
+      // State is IDLE
+      const resIdle = await sendMessage({ type: 'DECREASE_REMAINING_TIME', durationMinutes: 10 });
+      assert.strictEqual(resIdle.success, false);
+      assert.match(resIdle.error, /Cannot decrease remaining time while in state: IDLE/);
+
+      // State is COOLDOWN
+      await bg.transitionToCooldown();
+      const resCooldown = await sendMessage({ type: 'DECREASE_REMAINING_TIME', durationMinutes: 5 });
+      assert.strictEqual(resCooldown.success, false);
+      assert.match(resCooldown.error, /Cannot decrease remaining time while in state: COOLDOWN/);
+    });
   });
 });
 

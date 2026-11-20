@@ -7,6 +7,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cooldownInput = document.getElementById('cooldown-input');
   const lockoutWarning = document.getElementById('lockout-warning');
   const feedbackMsg = document.getElementById('feedback-msg');
+  const saveBtn = document.getElementById('save-btn');
+
+  const decreaseForm = document.getElementById('decrease-time-form');
+  const decreaseInput = document.getElementById('decrease-time-input');
+  const decreaseBtn = document.getElementById('decrease-time-btn');
+  const decreaseHint = document.getElementById('decrease-hint');
+  const currentRemainingMins = document.getElementById('current-remaining-mins');
+  const decreaseLockoutWarning = document.getElementById('decrease-lockout-warning');
+  const decreaseFeedbackMsg = document.getElementById('decrease-feedback-msg');
+
   const currentStateVal = document.getElementById('current-state-val');
   const remainingTimeVal = document.getElementById('remaining-time-val');
   const cooldownRemainingVal = document.getElementById('cooldown-remaining-val');
@@ -35,7 +45,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * Update the status display in the UI
+   * Update the status display and control states in the UI
    */
   function updateStatusDisplay() {
     currentStateVal.textContent = currentSettings.state;
@@ -56,17 +66,33 @@ document.addEventListener('DOMContentLoaded', async () => {
       cooldownRemainingVal.textContent = formatSeconds(cooldownSec);
     }
 
-    // Check if lockout rule applies:
-    // FR-5.3: While a session is ACTIVE or while in COOLDOWN, users cannot modify the global cooldown duration
-    const isLockedOut = currentSettings.state === 'ACTIVE' || currentSettings.state === 'COOLDOWN';
-    if (isLockedOut) {
-      cooldownInput.disabled = true;
-      document.getElementById('save-btn').disabled = true;
+    // Cooldown duration rule:
+    // Can be increased at any time (IDLE, ACTIVE, COOLDOWN), but only decreased in IDLE mode.
+    cooldownInput.disabled = false;
+    saveBtn.disabled = false;
+    if (currentSettings.state === 'ACTIVE' || currentSettings.state === 'COOLDOWN') {
+      cooldownInput.min = String(currentSettings.globalCooldownDuration);
       lockoutWarning.style.display = 'block';
+      lockoutWarning.innerHTML = `<strong>Notice:</strong> Cooldown duration can be increased at any time, but only decreased in Idle mode (current: ${currentSettings.globalCooldownDuration} min${currentSettings.globalCooldownDuration === 1 ? '' : 's'}).`;
     } else {
-      cooldownInput.disabled = false;
-      document.getElementById('save-btn').disabled = false;
+      cooldownInput.min = '1';
       lockoutWarning.style.display = 'none';
+    }
+
+    // Active session controls rule:
+    // Only available when state === 'ACTIVE'. Zero (0) is allowed for immediate cooldown.
+    if (currentSettings.state === 'ACTIVE') {
+      decreaseInput.disabled = false;
+      decreaseBtn.disabled = false;
+      decreaseLockoutWarning.style.display = 'none';
+      decreaseHint.style.display = 'block';
+      const remainingMins = Math.ceil(currentSettings.remainingTime / 60);
+      currentRemainingMins.textContent = `${formatSeconds(currentSettings.remainingTime)} (~${remainingMins} min${remainingMins === 1 ? '' : 's'})`;
+    } else {
+      decreaseInput.disabled = true;
+      decreaseBtn.disabled = true;
+      decreaseLockoutWarning.style.display = 'block';
+      decreaseHint.style.display = 'none';
     }
   }
 
@@ -85,7 +111,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         cooldownEndTime: response.cooldownEndTime
       };
 
-      cooldownInput.value = currentSettings.globalCooldownDuration;
+      if (document.activeElement !== cooldownInput) {
+        cooldownInput.value = currentSettings.globalCooldownDuration;
+      }
       updateStatusDisplay();
     });
   }
@@ -107,22 +135,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }, 1000);
 
-  // Handle settings form submit
+  // Handle settings form submit (cooldown duration)
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     feedbackMsg.style.display = 'none';
-
-    if (currentSettings.state === 'ACTIVE' || currentSettings.state === 'COOLDOWN') {
-      feedbackMsg.className = 'feedback-msg error';
-      feedbackMsg.textContent = 'Cannot modify cooldown duration while session is Active or in Cooldown.';
-      feedbackMsg.style.display = 'block';
-      return;
-    }
 
     const newDuration = parseInt(cooldownInput.value, 10);
     if (isNaN(newDuration) || newDuration <= 0) {
       feedbackMsg.className = 'feedback-msg error';
       feedbackMsg.textContent = 'Please enter a valid positive duration in minutes.';
+      feedbackMsg.style.display = 'block';
+      return;
+    }
+
+    if (currentSettings.state !== 'IDLE' && newDuration < currentSettings.globalCooldownDuration) {
+      feedbackMsg.className = 'feedback-msg error';
+      feedbackMsg.textContent = `Cooldown duration cannot be decreased while session is ${currentSettings.state} (minimum allowed: ${currentSettings.globalCooldownDuration} mins).`;
       feedbackMsg.style.display = 'block';
       return;
     }
@@ -136,8 +164,58 @@ document.addEventListener('DOMContentLoaded', async () => {
           feedbackMsg.style.display = 'block';
         } else {
           feedbackMsg.className = 'feedback-msg success';
-          feedbackMsg.textContent = 'Settings saved successfully!';
+          feedbackMsg.textContent = 'Cooldown settings saved successfully!';
           feedbackMsg.style.display = 'block';
+          loadSettings();
+        }
+      }
+    );
+  });
+
+  // Handle decrease remaining time submit
+  decreaseForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    decreaseFeedbackMsg.style.display = 'none';
+
+    if (currentSettings.state !== 'ACTIVE') {
+      decreaseFeedbackMsg.className = 'feedback-msg error';
+      decreaseFeedbackMsg.textContent = 'Cannot adjust remaining time: session is not Active.';
+      decreaseFeedbackMsg.style.display = 'block';
+      return;
+    }
+
+    const newMinutes = parseFloat(decreaseInput.value);
+    if (isNaN(newMinutes) || newMinutes < 0) {
+      decreaseFeedbackMsg.className = 'feedback-msg error';
+      decreaseFeedbackMsg.textContent = 'Please enter a valid non-negative number of minutes (enter 0 for immediate cooldown).';
+      decreaseFeedbackMsg.style.display = 'block';
+      return;
+    }
+
+    const newSeconds = Math.round(newMinutes * 60);
+    if (newSeconds >= currentSettings.remainingTime) {
+      decreaseFeedbackMsg.className = 'feedback-msg error';
+      decreaseFeedbackMsg.textContent = `New remaining time must be strictly less than the current remaining time (${formatSeconds(currentSettings.remainingTime)}).`;
+      decreaseFeedbackMsg.style.display = 'block';
+      return;
+    }
+
+    chrome.runtime.sendMessage(
+      { type: 'DECREASE_REMAINING_TIME', durationMinutes: newMinutes },
+      (response) => {
+        if (chrome.runtime.lastError || !response || !response.success) {
+          decreaseFeedbackMsg.className = 'feedback-msg error';
+          decreaseFeedbackMsg.textContent = response?.error || 'Failed to decrease session time.';
+          decreaseFeedbackMsg.style.display = 'block';
+        } else {
+          decreaseFeedbackMsg.className = 'feedback-msg success';
+          if (newMinutes === 0 || response.state === 'COOLDOWN') {
+            decreaseFeedbackMsg.textContent = 'Session ended early. Immediate cooldown initiated!';
+          } else {
+            decreaseFeedbackMsg.textContent = `Remaining time decreased to ${newMinutes} minute${newMinutes === 1 ? '' : 's'}!`;
+          }
+          decreaseFeedbackMsg.style.display = 'block';
+          decreaseInput.value = '';
           loadSettings();
         }
       }

@@ -49,9 +49,9 @@ When modifying or extending this extension, you **must** preserve these invarian
      - Any YouTube tab is playing audio (`tab.audible === true`).
    - The countdown pauses **only** when the user cannot be engaged in any way (no audio playing and no visible YouTube tab).
 
-5. **Strict Lockout Rule (FR-5.3)**:
-   - Users cannot modify or reduce the cooldown duration while in `ACTIVE` or `COOLDOWN`.
-   - Form inputs on `options.html` must remain grayed out (`disabled = true`) and background message handlers must reject changes during these states.
+5. **Cooldown & Session Modification Rules (FR-5.3 / FR-1.4)**:
+   - Users cannot reduce or decrease the cooldown duration while in `ACTIVE` or `COOLDOWN`. However, users may increase the cooldown duration at any time (which extends the active cooldown if currently in `COOLDOWN`). Full modification (increasing or decreasing) is allowed in `IDLE`.
+   - While in `ACTIVE`, users can decrease the remaining session time (e.g. from 60 minutes to 30 minutes, or to 0 for immediate cooldown). Remaining time cannot be increased while active.
 
 ---
 

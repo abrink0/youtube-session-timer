@@ -38,13 +38,48 @@
               <span class="unit">minutes</span>
             </div>
             <div id="lockout-warning" class="lockout-banner" style="display: none;">
-              <strong>Locked:</strong> Cooldown duration cannot be changed while a session is Active or in Cooldown.
+              <strong>Notice:</strong> Cooldown duration can be increased at any time, but only decreased in Idle mode.
             </div>
             <div id="feedback-msg" class="feedback-msg" style="display: none;"></div>
           </div>
 
           <div class="btn-group">
-            <button type="submit" id="save-btn" class="btn primary-btn">Save Settings</button>
+            <button type="submit" id="save-btn" class="btn primary-btn">Save Cooldown</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section" id="active-session-section">
+        <h2>Active Session Controls</h2>
+        <p class="description">
+          Reduce the remaining time of your active session. Time cannot be increased.
+        </p>
+
+        <form id="decrease-time-form">
+          <div class="field-group">
+            <label for="decrease-time-input">New Remaining Time</label>
+            <div class="input-inline">
+              <input 
+                type="number" 
+                id="decrease-time-input" 
+                min="0" 
+                max="1440" 
+                step="1" 
+                placeholder="Minutes"
+              />
+              <span class="unit">minutes</span>
+            </div>
+            <div id="decrease-hint" class="helper-text">
+              Current remaining: <span id="current-remaining-mins">--</span>
+            </div>
+            <div id="decrease-lockout-warning" class="lockout-banner" style="display: none;">
+              Remaining time can only be adjusted during an active session.
+            </div>
+            <div id="decrease-feedback-msg" class="feedback-msg" style="display: none;"></div>
+          </div>
+
+          <div class="btn-group">
+            <button type="submit" id="decrease-time-btn" class="btn warning-btn">Decrease Remaining Time</button>
           </div>
         </form>
       </section>

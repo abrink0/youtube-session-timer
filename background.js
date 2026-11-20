@@ -291,6 +291,125 @@ function stopCountdownTimer() {
 }
 
 /**
+ * Set cooldown duration with permission checks.
+ * Cooldown duration can be increased at any time (IDLE, ACTIVE, COOLDOWN),
+ * but can only be decreased when in IDLE mode.
+ */
+async function setCooldownDuration(durationMinutes) {
+  const minutes = Number(durationMinutes);
+  if (!Number.isInteger(minutes) || minutes <= 0) {
+    return {
+      success: false,
+      error: 'Cooldown duration must be a positive integer.'
+    };
+  }
+
+  await checkCooldownStatus();
+  const current = await getStoredState();
+
+  // Can only decrease cooldown duration when in IDLE mode
+  if (current.state !== 'IDLE' && minutes < current.globalCooldownDuration) {
+    return {
+      success: false,
+      error: `Cannot decrease cooldown duration while session is ${current.state}. (Only allowed in IDLE mode).`
+    };
+  }
+
+  const updates = {
+    globalCooldownDuration: minutes
+  };
+
+  // If currently in COOLDOWN, extend the current active cooldown end time by the difference
+  if (current.state === 'COOLDOWN' && current.cooldownEndTime) {
+    const addedMs = (minutes - current.globalCooldownDuration) * 60 * 1000;
+    const newCooldownEndTime = current.cooldownEndTime + addedMs;
+    updates.cooldownEndTime = newCooldownEndTime;
+    await chrome.alarms.create(COOLDOWN_ALARM_NAME, {
+      when: newCooldownEndTime
+    });
+  }
+
+  await chrome.storage.local.set(updates);
+
+  const updated = { ...current, ...updates };
+  await updateBadge(updated);
+  if (current.state === 'COOLDOWN') {
+    notifyTabsStateChanged('COOLDOWN', updated);
+  }
+
+  return {
+    success: true,
+    ...updates
+  };
+}
+
+/**
+ * Decrease remaining session time when in ACTIVE mode.
+ * Zero (0) is allowed to trigger immediate cooldown.
+ * Increases are rejected.
+ */
+async function decreaseRemainingTime(options) {
+  let newSeconds;
+  if (typeof options === 'number') {
+    newSeconds = Math.round(options * 60);
+  } else if (typeof options?.remainingSeconds === 'number') {
+    newSeconds = Math.round(options.remainingSeconds);
+  } else if (typeof options?.durationMinutes === 'number' || typeof options?.remainingMinutes === 'number') {
+    const mins = Number(options.durationMinutes ?? options.remainingMinutes);
+    newSeconds = Math.round(mins * 60);
+  } else {
+    return {
+      success: false,
+      error: 'Invalid duration specified.'
+    };
+  }
+
+  if (!Number.isFinite(newSeconds) || newSeconds < 0) {
+    return {
+      success: false,
+      error: 'Remaining time must be a non-negative number.'
+    };
+  }
+
+  await checkCooldownStatus();
+  const current = await getStoredState();
+
+  if (current.state !== 'ACTIVE') {
+    return {
+      success: false,
+      error: `Cannot decrease remaining time while in state: ${current.state}`
+    };
+  }
+
+  if (newSeconds >= current.remainingTime) {
+    return {
+      success: false,
+      error: `New remaining time must be less than current remaining time (${Math.ceil(current.remainingTime / 60)}m).`
+    };
+  }
+
+  if (newSeconds === 0) {
+    await transitionToCooldown();
+    const updated = await getStoredState();
+    return {
+      success: true,
+      ...updated
+    };
+  }
+
+  const updates = { remainingTime: newSeconds };
+  await chrome.storage.local.set(updates);
+  const updated = { ...current, ...updates };
+  await updateBadge(updated);
+  notifyTabsStateChanged('ACTIVE', updated);
+
+  return {
+    success: true,
+    ...updated
+  };
+}
+
+/**
  * Notify all open tabs about a state change.
  */
 function notifyTabsStateChanged(state, data) {
@@ -427,34 +546,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === 'SET_COOLDOWN_DURATION') {
     (async () => {
-      const minutes = Number(message.durationMinutes);
-      if (!Number.isInteger(minutes) || minutes <= 0) {
-        sendResponse({
-          success: false,
-          error: 'Cooldown duration must be a positive integer.'
-        });
-        return;
-      }
+      const result = await setCooldownDuration(message.durationMinutes);
+      sendResponse(result);
+    })();
+    return true;
+  }
 
-      const current = await getStoredState();
-
-      // FR-5.3: Users cannot modify the global cooldown duration while a session is ACTIVE or in COOLDOWN
-      if (current.state === 'ACTIVE' || current.state === 'COOLDOWN') {
-        sendResponse({
-          success: false,
-          error: 'Cannot modify cooldown duration while session is ACTIVE or in COOLDOWN.'
-        });
-        return;
-      }
-
-      await chrome.storage.local.set({
-        globalCooldownDuration: minutes
-      });
-
-      sendResponse({
-        success: true,
-        globalCooldownDuration: minutes
-      });
+  if (message.type === 'DECREASE_REMAINING_TIME' || message.type === 'SET_REMAINING_TIME') {
+    (async () => {
+      const result = await decreaseRemainingTime(message);
+      sendResponse(result);
     })();
     return true;
   }
@@ -476,6 +577,8 @@ if (typeof module !== 'undefined' && module.exports) {
     isYouTubeUrl,
     isYouTubeActiveAndFocused,
     isUserEngagedWithYouTube,
-    updateBadge
+    updateBadge,
+    setCooldownDuration,
+    decreaseRemainingTime
   };
 }

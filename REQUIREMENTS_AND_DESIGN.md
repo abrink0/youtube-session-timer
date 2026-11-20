@@ -38,6 +38,7 @@ The extension operates on a strict 3-state state machine:
 | **FR-1.1** | **Forced Prompt** | Navigating to any YouTube URL while in `IDLE` immediately blocks interaction and displays the Session Duration Prompt. |
 | **FR-1.2** | **Duration Validation** | User must provide a positive number of minutes ($>0$). Zero, negative, and non-numeric inputs are rejected. |
 | **FR-1.3** | **Session Activation** | On submission, `state` becomes `ACTIVE`, `remainingTime` is set to `duration * 60` seconds, and the overlay disappears. |
+| **FR-1.4** | **Decrease Remaining Time** | While in `ACTIVE`, user can decrease `remainingTime` via Options page (e.g. from 60m to 30m, or 0 for immediate cooldown). Increasing time is rejected. |
 | **FR-2.1** | **Engagement-Based Countdown** | Timer decrements in 1-second intervals whenever the user is engaged: (1) a YouTube tab is active in any open, non-minimized window, OR (2) any YouTube tab is playing audio (`tab.audible === true`). |
 | **FR-2.2** | **Automatic Pause** | Countdown pauses only when it is not possible to be engaged: no YouTube tab is playing audio, AND no YouTube tab is an active tab in an open, non-minimized window. |
 | **FR-2.3** | **Multi-Tab Sync** | All open YouTube tabs share the single global session state. Opening additional tabs does not double-count or trigger setup prompts. |
@@ -51,7 +52,7 @@ The extension operates on a strict 3-state state machine:
 | **FR-4.3** | **Full-Page Blocking** | All open and new YouTube tabs are locked by a full-page cooldown countdown screen. |
 | **FR-5.1** | **Global Cooldown Config** | Options page allows configuring `globalCooldownDuration` (in minutes). |
 | **FR-5.2** | **Wall-Clock Cooldown** | Cooldown calculates `cooldownEndTime = Date.now() + durationMs`. Expiration is tracked via `chrome.alarms` against real-world wall-clock time. |
-| **FR-5.3** | **Setting Lockout** | While in `ACTIVE` or `COOLDOWN`, cooldown settings cannot be modified (inputs are disabled/grayed out in options). |
+| **FR-5.3** | **Setting Lockout / Increase Rule** | Cooldown duration can be increased at any time (extending current cooldown if in `COOLDOWN`). Cooldown can only be decreased when in `IDLE`. Decreasing during `ACTIVE` or `COOLDOWN` is rejected. |
 | **FR-5.4** | **Cooldown Completion** | Once wall-clock time passes `cooldownEndTime`, state transitions to `IDLE`. |
 
 ---

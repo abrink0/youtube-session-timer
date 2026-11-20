@@ -153,4 +153,5 @@ Unit tests executed using Node.js's built-in test runner (`node --test`).
 | `GET_STATE` | Options / Content | Background | `{}` | `{ success: true, state, remainingTime, cooldownEndTime, globalCooldownDuration }` |
 | `START_SESSION` | Content Script | Background | `{ durationMinutes }` | `{ success: true, state: 'ACTIVE', remainingTime }` or `{ success: false, error }` |
 | `SET_COOLDOWN_DURATION` | Options Page | Background | `{ durationMinutes }` | `{ success: true, globalCooldownDuration }` or `{ success: false, error }` |
+| `DECREASE_REMAINING_TIME` | Options Page | Background | `{ durationMinutes }` | `{ success: true, remainingTime, state }` or `{ success: false, error }` |
 | `STATE_CHANGED` | Background | Content Tabs | `{ state, data }` | Broadcast notification to open tabs. |
