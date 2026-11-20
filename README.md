@@ -1,6 +1,8 @@
 # YouTube Session Timer
 
-A minimal, focused browser extension for **Chromium-based browsers (Chrome and Brave)** built on **Manifest V3**. It enforces intentional YouTube consumption by requiring a time budget before browsing, hiding feed videos that exceed the remaining budget, tracking background audio and active engagement, and imposing a mandatory cooldown when time expires.
+A minimal, focused browser extension built on **Manifest V3**. It enforces intentional YouTube consumption by requiring a time budget before browsing, hiding feed videos that exceed the remaining budget, tracking background audio and active engagement, and imposing a mandatory cooldown when time expires.
+
+Tested on Brave and Firefox.
 
 Inspired by [Clockwise TV](https://www.clockwisetv.com/), created with Antigravity.
 
@@ -26,7 +28,9 @@ Inspired by [Clockwise TV](https://www.clockwisetv.com/), created with Antigravi
 
 ---
 
-## Installation & Setup (Chrome / Brave)
+## Installation & Setup 
+
+### Chrome / Brave
 
 1. Open your browser and navigate to the extensions page:
    - **Chrome**: `chrome://extensions`
@@ -35,9 +39,14 @@ Inspired by [Clockwise TV](https://www.clockwisetv.com/), created with Antigravi
 3. Click **Load unpacked** (top-left corner).
 4. Select the project directory:
    ```text
-   The repository root directory (e.g. ./yt-time-management)
+   The repository root directory (e.g. ./youtube-session-timer)
    ```
 5. Pin **YouTube Session Timer** to your browser toolbar for quick visibility of remaining session time.
+
+### Firefox
+
+Navigate to `about:debugging#/runtime/this-firefox` in the browser.
+Use **Load Temporary Add-on** and select `manifest.json`.
 
 ---
 

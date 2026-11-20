@@ -12,7 +12,8 @@
     "*://*.youtube.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": ["background.js"]
   },
   "content_scripts": [
     {
@@ -31,5 +32,14 @@
   },
   "action": {
     "default_title": "YouTube Session Timer"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "youtube-session-timer@abrink0",
+      "strict_min_version": "121.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
   }
 }

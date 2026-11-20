@@ -7,7 +7,7 @@ A guide for AI agents and maintainers working on the **YouTube Session Timer** c
 ## Repository Map
 
 ```text
-yt-time-management/
+youtube-session-timer/
 ├── manifest.json            # Chrome Manifest V3 configuration & permissions
 ├── background.js            # Background Service Worker: state machine, engagement tracking, alarms
 ├── content.js               # Content script: Shadow DOM overlays, feed filtering, media interception
@@ -71,7 +71,7 @@ When adding new features or modifying behavior:
 ### Browser Testing
 1. Open `chrome://extensions` (or `brave://extensions`).
 2. Ensure **Developer mode** is toggled ON.
-3. Click **Load unpacked** and select the repository root directory (`yt-time-management`).
+3. Click **Load unpacked** and select the repository root directory (`youtube-session-timer`).
 4. After making code edits, click the 🔄 **Reload** icon on the extension card.
 
 ### Quick DevTools Debugging Shortcuts
