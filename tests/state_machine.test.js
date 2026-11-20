@@ -4,6 +4,9 @@ const assert = require('node:assert');
 // Mock chrome API environment
 let mockStorage = {};
 let mockAlarms = {};
+let mockBadge = { text: '', color: '' };
+let mockWindows = [{ id: 1, focused: true }];
+let mockTabs = [{ id: 101, windowId: 1, active: true, url: 'https://www.youtube.com/' }];
 let messageListeners = [];
 let alarmListeners = [];
 
@@ -54,11 +57,38 @@ global.chrome = {
       if (typeof cb === 'function') cb({ success: true, state: 'IDLE' });
     }
   },
-  tabs: {
-    query: (queryInfo, cb) => {
-      cb([]);
+  action: {
+    setBadgeText: async ({ text }) => {
+      mockBadge.text = text;
     },
-    sendMessage: async () => {}
+    setBadgeBackgroundColor: async ({ color }) => {
+      mockBadge.color = color;
+    }
+  },
+  windows: {
+    getAll: async () => mockWindows,
+    onFocusChanged: { addListener: () => {} }
+  },
+  tabs: {
+    query: async (queryInfo, cb) => {
+      let results = [...mockTabs];
+      if (queryInfo) {
+        if (typeof queryInfo.active === 'boolean') {
+          results = results.filter((t) => t.active === queryInfo.active);
+        }
+        if (queryInfo.windowId) {
+          results = results.filter((t) => t.windowId === queryInfo.windowId);
+        }
+      }
+      if (typeof cb === 'function') {
+        cb(results);
+      }
+      return results;
+    },
+    sendMessage: async () => {},
+    onActivated: { addListener: () => {} },
+    onUpdated: { addListener: () => {} },
+    onRemoved: { addListener: () => {} }
   }
 };
 
@@ -82,6 +112,9 @@ describe('YouTube Session Limiter - State Machine', () => {
   beforeEach(async () => {
     mockStorage = {};
     mockAlarms = {};
+    mockBadge = { text: '', color: '' };
+    mockWindows = [{ id: 1, focused: true }];
+    mockTabs = [{ id: 101, windowId: 1, active: true, url: 'https://www.youtube.com/' }];
     bg.stopCountdownTimer();
   });
 
@@ -196,6 +229,117 @@ describe('YouTube Session Limiter - State Machine', () => {
 
     const stateAfter = await bg.getStoredState();
     assert.strictEqual(stateAfter.globalCooldownDuration, 45);
+  });
+});
+
+describe('Phase 2: Focus Tracking & Automatic Timer Pausing (FR-2.1, FR-2.2, FR-2.4)', () => {
+  beforeEach(async () => {
+    mockStorage = {};
+    mockBadge = { text: '', color: '' };
+    mockWindows = [{ id: 1, focused: true }];
+    mockTabs = [{ id: 101, windowId: 1, active: true, url: 'https://www.youtube.com/' }];
+    bg.stopCountdownTimer();
+  });
+
+  it('correctly identifies valid and invalid YouTube URLs', () => {
+    assert.strictEqual(bg.isYouTubeUrl('https://www.youtube.com/'), true);
+    assert.strictEqual(bg.isYouTubeUrl('https://youtube.com/watch?v=123'), true);
+    assert.strictEqual(bg.isYouTubeUrl('https://m.youtube.com/feed/subscriptions'), true);
+    assert.strictEqual(bg.isYouTubeUrl('https://music.youtube.com/'), true);
+
+    assert.strictEqual(bg.isYouTubeUrl('https://google.com'), false);
+    assert.strictEqual(bg.isYouTubeUrl('chrome://extensions'), false);
+    assert.strictEqual(bg.isYouTubeUrl('about:blank'), false);
+    assert.strictEqual(bg.isYouTubeUrl(''), false);
+    assert.strictEqual(bg.isYouTubeUrl(null), false);
+  });
+
+  it('evaluates focus condition as true only when focused window has active YouTube tab', async () => {
+    // Normal: focused window, YouTube active
+    assert.strictEqual(await bg.isYouTubeActiveAndFocused(), true);
+
+    // Active tab is non-YouTube
+    mockTabs = [{ id: 102, windowId: 1, active: true, url: 'https://en.wikipedia.org/' }];
+    assert.strictEqual(await bg.isYouTubeActiveAndFocused(), false);
+
+    // YouTube tab exists in window, but is NOT the active tab
+    mockTabs = [
+      { id: 101, windowId: 1, active: false, url: 'https://www.youtube.com/' },
+      { id: 102, windowId: 1, active: true, url: 'https://en.wikipedia.org/' }
+    ];
+    assert.strictEqual(await bg.isYouTubeActiveAndFocused(), false);
+
+    // Window lost focus (browser minimized or other application active)
+    mockWindows = [{ id: 1, focused: false }];
+    mockTabs = [{ id: 101, windowId: 1, active: true, url: 'https://www.youtube.com/' }];
+    assert.strictEqual(await bg.isYouTubeActiveAndFocused(), false);
+
+    // All windows closed
+    mockWindows = [];
+    assert.strictEqual(await bg.isYouTubeActiveAndFocused(), false);
+  });
+
+  it('updates toolbar badge reflecting active vs paused states', async () => {
+    // IDLE state -> badge is empty
+    await bg.updateBadge({ state: 'IDLE', remainingTime: 0 });
+    assert.strictEqual(mockBadge.text, '');
+
+    // ACTIVE state & focused on YouTube -> blue badge
+    mockWindows = [{ id: 1, focused: true }];
+    mockTabs = [{ id: 101, windowId: 1, active: true, url: 'https://www.youtube.com/' }];
+    await bg.updateBadge({ state: 'ACTIVE', remainingTime: 900 });
+    assert.strictEqual(mockBadge.text, '15m');
+    assert.strictEqual(mockBadge.color, '#2563eb'); // Blue
+
+    // ACTIVE state but unfocused (switched to non-YT tab) -> gray badge
+    mockTabs = [{ id: 102, windowId: 1, active: true, url: 'https://google.com' }];
+    await bg.updateBadge({ state: 'ACTIVE', remainingTime: 900 });
+    assert.strictEqual(mockBadge.text, '15m');
+    assert.strictEqual(mockBadge.color, '#6b7280'); // Gray (paused)
+
+    // COOLDOWN state -> red badge
+    await bg.updateBadge({ state: 'COOLDOWN', cooldownEndTime: Date.now() + 1800 * 1000 });
+    assert.strictEqual(mockBadge.text, '30m');
+    assert.strictEqual(mockBadge.color, '#ef4444'); // Red
+  });
+
+  it('pauses timer automatically when YouTube loses focus', async () => {
+    await bg.initializeDefaults();
+    await bg.transitionToActive(10); // 600 seconds
+
+    // Initial state: 600s
+    let state = await bg.getStoredState();
+    assert.strictEqual(state.remainingTime, 600);
+
+    // Simulate losing focus (e.g. user switched to another tab)
+    mockTabs = [{ id: 102, windowId: 1, active: true, url: 'https://news.ycombinator.com/' }];
+    assert.strictEqual(await bg.isYouTubeActiveAndFocused(), false);
+
+    // Wait 1.1s with ticker running: remainingTime should NOT decrement because isYouTubeActiveAndFocused is false
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    state = await bg.getStoredState();
+    assert.strictEqual(state.remainingTime, 600); // Remained paused!
+
+    bg.stopCountdownTimer();
+  });
+
+  it('resumes timer countdown when YouTube regains focus', async () => {
+    await bg.initializeDefaults();
+    await bg.transitionToActive(10); // 600 seconds
+
+    // Focused on YouTube
+    mockWindows = [{ id: 1, focused: true }];
+    mockTabs = [{ id: 101, windowId: 1, active: true, url: 'https://www.youtube.com/' }];
+    assert.strictEqual(await bg.isYouTubeActiveAndFocused(), true);
+
+    // Wait 1.1s with ticker running: remainingTime should decrement by 1
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+
+    const state = await bg.getStoredState();
+    assert.strictEqual(state.remainingTime, 599); // Decremented!
+
+    bg.stopCountdownTimer();
   });
 });
 

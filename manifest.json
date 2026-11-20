@@ -5,7 +5,8 @@
   "description": "Enforce intentional YouTube consumption with session time limits and mandatory cooldowns.",
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "tabs"
   ],
   "host_permissions": [
     "*://*.youtube.com/*"

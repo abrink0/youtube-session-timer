@@ -1,6 +1,7 @@
 /**
  * YouTube Session Limiter - Background Service Worker
  * Manages the core 3-state machine: IDLE, ACTIVE, COOLDOWN.
+ * Enforces focus-based countdown (FR-2.1, FR-2.2) and toolbar badge visibility (FR-2.4).
  */
 
 const DEFAULT_GLOBAL_COOLDOWN_MINUTES = 30;
@@ -61,6 +62,87 @@ async function initializeDefaults() {
 }
 
 /**
+ * Check whether a given URL is a YouTube page.
+ */
+function isYouTubeUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try {
+    const parsed = new URL(url);
+    const hostname = parsed.hostname.toLowerCase();
+    return (
+      hostname === 'www.youtube.com' ||
+      hostname === 'youtube.com' ||
+      hostname === 'm.youtube.com' ||
+      hostname.endsWith('.youtube.com')
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Evaluate whether a browser window is currently focused AND the active tab in it is YouTube.
+ * Returns true if focus countdown conditions (FR-2.1) are met; false otherwise.
+ */
+async function isYouTubeActiveAndFocused() {
+  try {
+    if (chrome.windows && chrome.windows.getAll) {
+      const windows = await chrome.windows.getAll({ windowTypes: ['normal', 'popup'] });
+      const focusedWindow = windows.find((w) => w.focused);
+      if (!focusedWindow) {
+        return false;
+      }
+
+      if (chrome.tabs && chrome.tabs.query) {
+        const activeTabs = await chrome.tabs.query({ active: true, windowId: focusedWindow.id });
+        if (!activeTabs || activeTabs.length === 0) return false;
+        return isYouTubeUrl(activeTabs[0].url);
+      }
+    } else if (chrome.tabs && chrome.tabs.query) {
+      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+      return Boolean(tab && isYouTubeUrl(tab.url));
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Update the extension toolbar action badge (FR-2.4).
+ */
+async function updateBadge(stateData) {
+  if (!chrome.action || !chrome.action.setBadgeText) return;
+
+  const data = stateData || await getStoredState();
+  const state = data.state || 'IDLE';
+
+  if (state === 'IDLE') {
+    await chrome.action.setBadgeText({ text: '' });
+    return;
+  }
+
+  if (state === 'COOLDOWN') {
+    const remainingSec = data.cooldownEndTime
+      ? Math.max(0, Math.ceil((data.cooldownEndTime - Date.now()) / 1000))
+      : 0;
+    const text = remainingSec >= 60 ? `${Math.ceil(remainingSec / 60)}m` : `${remainingSec}s`;
+    await chrome.action.setBadgeText({ text });
+    await chrome.action.setBadgeBackgroundColor({ color: '#ef4444' }); // Red
+    return;
+  }
+
+  if (state === 'ACTIVE') {
+    const remainingSec = data.remainingTime || 0;
+    const isFocused = await isYouTubeActiveAndFocused();
+    const text = remainingSec >= 60 ? `${Math.ceil(remainingSec / 60)}m` : `${remainingSec}s`;
+    await chrome.action.setBadgeText({ text });
+    // Blue when active & counting down on YouTube; Gray when paused
+    await chrome.action.setBadgeBackgroundColor({ color: isFocused ? '#2563eb' : '#6b7280' });
+  }
+}
+
+/**
  * Evaluate if current cooldown has expired.
  */
 async function checkCooldownStatus() {
@@ -89,6 +171,7 @@ async function transitionToIdle() {
   };
 
   await chrome.storage.local.set(updates);
+  await updateBadge(updates);
   notifyTabsStateChanged('IDLE', updates);
 }
 
@@ -105,6 +188,7 @@ async function transitionToActive(durationMinutes) {
 
   await chrome.storage.local.set(updates);
   startCountdownTimer();
+  await updateBadge(updates);
   notifyTabsStateChanged('ACTIVE', updates);
 }
 
@@ -132,11 +216,12 @@ async function transitionToCooldown() {
     when: cooldownEndTime
   });
 
+  await updateBadge(updates);
   notifyTabsStateChanged('COOLDOWN', updates);
 }
 
 /**
- * Starts 1-second countdown ticker for ACTIVE state.
+ * Starts focus-aware 1-second countdown ticker for ACTIVE state (FR-2.1, FR-2.2).
  */
 function startCountdownTimer() {
   stopCountdownTimer();
@@ -144,6 +229,16 @@ function startCountdownTimer() {
     const current = await getStoredState();
     if (current.state !== 'ACTIVE') {
       stopCountdownTimer();
+      await updateBadge(current);
+      return;
+    }
+
+    // FR-2.1: Count down ONLY when a browser window is focused AND active tab is YouTube
+    const isFocused = await isYouTubeActiveAndFocused();
+    await updateBadge(current);
+
+    if (!isFocused) {
+      // Automatic pause (FR-2.2): switching tabs, apps, minimizing, or no YouTube tabs
       return;
     }
 
@@ -188,6 +283,37 @@ function notifyTabsStateChanged(state, data) {
   }
 }
 
+/**
+ * Focus and tab change handler to immediately update paused/active badge visual.
+ */
+async function onFocusOrTabChanged() {
+  const current = await getStoredState();
+  if (current.state === 'ACTIVE') {
+    await updateBadge(current);
+  }
+}
+
+// Tab & Window Focus Event Listeners (FR-2.1, FR-2.2)
+if (chrome.tabs && chrome.tabs.onActivated) {
+  chrome.tabs.onActivated.addListener(onFocusOrTabChanged);
+}
+
+if (chrome.tabs && chrome.tabs.onUpdated) {
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.url || changeInfo.status === 'complete') {
+      onFocusOrTabChanged();
+    }
+  });
+}
+
+if (chrome.tabs && chrome.tabs.onRemoved) {
+  chrome.tabs.onRemoved.addListener(onFocusOrTabChanged);
+}
+
+if (chrome.windows && chrome.windows.onFocusChanged) {
+  chrome.windows.onFocusChanged.addListener(onFocusOrTabChanged);
+}
+
 // Extension Lifecycle Listeners
 chrome.runtime.onInstalled.addListener(async () => {
   await initializeDefaults();
@@ -196,6 +322,7 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (current.state === 'ACTIVE' && current.remainingTime > 0) {
     startCountdownTimer();
   }
+  await updateBadge(current);
 });
 
 chrome.runtime.onStartup.addListener(async () => {
@@ -204,6 +331,7 @@ chrome.runtime.onStartup.addListener(async () => {
   if (current.state === 'ACTIVE' && current.remainingTime > 0) {
     startCountdownTimer();
   }
+  await updateBadge(current);
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -304,6 +432,9 @@ if (typeof module !== 'undefined' && module.exports) {
     transitionToActive,
     transitionToCooldown,
     startCountdownTimer,
-    stopCountdownTimer
+    stopCountdownTimer,
+    isYouTubeUrl,
+    isYouTubeActiveAndFocused,
+    updateBadge
   };
 }
