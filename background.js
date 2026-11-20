@@ -81,32 +81,61 @@ function isYouTubeUrl(url) {
 }
 
 /**
- * Evaluate whether a browser window is currently focused AND the active tab in it is YouTube.
- * Returns true if focus countdown conditions (FR-2.1) are met; false otherwise.
+ * Evaluate whether the user is engaged with YouTube content in any way (FR-2.1, FR-2.2):
+ * 1. Audio is playing in any YouTube tab (background audio tracking via tab.audible).
+ * 2. A YouTube tab is the active tab in an open, non-minimized browser window
+ *    (supporting watching while working in another window/app, side-by-side, or multi-monitor).
+ * Returns true if the user can be engaged; false only if it is not possible to be engaged.
  */
-async function isYouTubeActiveAndFocused() {
+async function isUserEngagedWithYouTube() {
   try {
+    if (!chrome.tabs || !chrome.tabs.query) return false;
+
+    // Query all open YouTube tabs
+    const allTabs = await chrome.tabs.query({ url: '*://*.youtube.com/*' });
+    if (!allTabs || allTabs.length === 0) return false;
+    const ytTabs = allTabs.filter((tab) => isYouTubeUrl(tab.url));
+    if (ytTabs.length === 0) return false;
+
+    // 1. Background audio check: If any YouTube tab is playing audio, the timer must tick
+    const isPlayingAudio = ytTabs.some((tab) => Boolean(tab.audible));
+    if (isPlayingAudio) {
+      return true;
+    }
+
+    // 2. Visible tab check: If a YouTube tab is the active tab in an open, non-minimized window,
+    // the user can see and watch the content (even if input focus is in another window/app).
     if (chrome.windows && chrome.windows.getAll) {
       const windows = await chrome.windows.getAll({ windowTypes: ['normal', 'popup'] });
-      const focusedWindow = windows.find((w) => w.focused);
-      if (!focusedWindow) {
-        return false;
+      const windowMap = new Map();
+      for (const w of windows) {
+        windowMap.set(w.id, w);
       }
 
-      if (chrome.tabs && chrome.tabs.query) {
-        const activeTabs = await chrome.tabs.query({ active: true, windowId: focusedWindow.id });
-        if (!activeTabs || activeTabs.length === 0) return false;
-        return isYouTubeUrl(activeTabs[0].url);
+      for (const tab of ytTabs) {
+        if (tab.active) {
+          const win = windowMap.get(tab.windowId);
+          // If window is open and not minimized, the user can see YouTube
+          if (win && win.state !== 'minimized') {
+            return true;
+          }
+        }
       }
-    } else if (chrome.tabs && chrome.tabs.query) {
-      const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-      return Boolean(tab && isYouTubeUrl(tab.url));
+    } else {
+      // Fallback: check if any YouTube tab is active
+      const isAnyActive = ytTabs.some((tab) => Boolean(tab.active));
+      if (isAnyActive) return true;
     }
+
+    // Neither playing audio nor visible in an active, non-minimized window
     return false;
   } catch {
     return false;
   }
 }
+
+// Alias for backwards compatibility
+const isYouTubeActiveAndFocused = isUserEngagedWithYouTube;
 
 /**
  * Update the extension toolbar action badge (FR-2.4).
@@ -300,7 +329,7 @@ if (chrome.tabs && chrome.tabs.onActivated) {
 
 if (chrome.tabs && chrome.tabs.onUpdated) {
   chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.url || changeInfo.status === 'complete') {
+    if (changeInfo.url || changeInfo.status === 'complete' || typeof changeInfo.audible === 'boolean') {
       onFocusOrTabChanged();
     }
   });
@@ -446,6 +475,7 @@ if (typeof module !== 'undefined' && module.exports) {
     stopCountdownTimer,
     isYouTubeUrl,
     isYouTubeActiveAndFocused,
+    isUserEngagedWithYouTube,
     updateBadge
   };
 }
