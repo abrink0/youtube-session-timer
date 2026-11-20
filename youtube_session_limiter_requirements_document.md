@@ -32,7 +32,7 @@ To keep V1 minimal and shippable, the following are explicitly excluded from thi
 * **FR-3.1 Duration-Based Feed Hiding:** While `ACTIVE`, the extension must evaluate video cards across YouTube feeds (Home, Search results, Subscriptions, Watch page recommendations). Any video whose parsed duration exceeds the current `remainingTime` must be hidden via CSS (`display: none`) rather than removed from the DOM (to prevent breaking YouTube's layout recycling).
 * **FR-3.2 Dynamic Re-evaluation:** As `remainingTime` decreases, visible video cards in feeds must be periodically re-evaluated and hidden once their duration exceeds the updated `remainingTime`.
 * **FR-3.3 Non-Standard Content Handling:** Livestreams, upcoming premieres, and playlists/mixes lack standard fixed durations and must be hidden during an `ACTIVE` session so they cannot bypass the time limit.
-* **FR-3.4 Watch Page & Direct URL Guard:** If a user navigates directly to a `/watch` URL (via bookmarks, external links, autoplay, or history) whose video metadata duration (`<video>.duration`) exceeds `remainingTime`, playback must be immediately halted and blocked.
+* **FR-3.4 Direct URL & Watch Page Policy:** Videos opened directly via URL, bookmarks, or external links are permitted to play during an `ACTIVE` session regardless of video length (allowing users to watch portions of longer videos or pause and resume freely). Playback is strictly bounded by the active session timer, which halts and pauses all media once `remainingTime` reaches `0` (FR-4.1).
 
 ### 2.4 Session Expiration & Blocking
 * **FR-4.1 Expiration Trigger:** When `remainingTime` reaches `0`, the session state immediately transitions to `COOLDOWN`.
@@ -42,7 +42,7 @@ To keep V1 minimal and shippable, the following are explicitly excluded from thi
 ### 2.5 Global Cooldown Management
 * **FR-5.1 Global Cooldown Setting:** A global configuration setting (accessible via the extension's Options page) allows the user to set the mandatory cooldown duration (in minutes).
 * **FR-5.2 Wall-Clock Cooldown Tracking:** When entering `COOLDOWN`, the extension calculates and stores an absolute timestamp (`cooldownEndTime = now + globalCooldownDuration`). Cooldown expiration is evaluated against real-world wall-clock time, regardless of whether YouTube or the browser remains open.
-* **FR-5.3 Setting Lockout:** Users cannot reduce the global cooldown duration while a session is `ACTIVE` or while in `COOLDOWN` (any reduction only applies to future cycles).
+* **FR-5.3 Setting Lockout:** While a session is `ACTIVE` or while in `COOLDOWN`, users cannot modify the global cooldown duration at all (no queuing or reductions allowed). The input is disabled/grayed out in the options UI until the state returns to `IDLE`.
 * **FR-5.4 Cooldown Completion:** Once `now >= cooldownEndTime`, the state resets to `IDLE`. Visiting or refreshing YouTube will once again trigger the Session Initialization prompt (FR-1.1).
 
 ---
@@ -82,17 +82,16 @@ To keep V1 minimal and shippable, the following are explicitly excluded from thi
   * Ensure `remainingTime` decrements only when focus conditions are met, preventing double-counting across multiple YouTube tabs.
 * **Milestone:** Switching tabs or minimizing the browser reliably pauses the session timer; resuming focus resumes the countdown.
 
-### Phase 3: Feed Hiding & Watch-Page Enforcement
-* **Deliverables:** DOM observer, duration parser, and `/watch` playback guard in `content.js`.
+### Phase 3: Feed Hiding & Content Filtering
+* **Deliverables:** DOM observer and duration parser in `content.js`.
 * **Tasks:**
   * Use `MutationObserver` to scan video card elements (`ytd-rich-item-renderer`, `ytd-video-renderer`, `ytd-compact-video-renderer`), parse `HH:MM:SS` duration badges into seconds, and apply `display: none` to videos exceeding `remainingTime` (as well as livestreams/playlists).
   * Run a periodic check as `remainingTime` ticks down to hide newly ineligible videos.
-  * On `/watch` pages, inspect `<video>.duration` on `loadedmetadata` and trigger a block if the video exceeds `remainingTime`.
-* **Milestone:** Over-limit videos disappear from feeds and cannot be played via direct links or autoplay.
+* **Milestone:** Over-limit videos disappear from feeds; playback strictly halts once the session timer reaches zero.
 
 ### Phase 4: SPA Navigation & Edge-Case Hardening
 * **Deliverables:** SPA lifecycle hooks and cleanup routines in `content.js`.
 * **Tasks:**
-  * Hook into `yt-navigate-finish` so feed filtering and `/watch` duration checks execute cleanly across soft navigations.
+  * Hook into `yt-navigate-finish` so feed filtering executes cleanly across soft navigations.
   * Verify video playback pauses immediately across all open tabs when transitioning from `ACTIVE` to `COOLDOWN`.
 * **Milestone:** Navigating anywhere within YouTube seamlessly enforces all session rules without requiring manual page refreshes.

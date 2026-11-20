@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Session Limiter Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header class="header">
+      <div class="logo-icon">⏱</div>
+      <div>
+        <h1>YouTube Session Limiter</h1>
+        <p class="subtitle">Global Configuration & Session Controls</p>
+      </div>
+    </header>
+
+    <main class="content-card">
+      <section class="section">
+        <h2>Global Cooldown Period</h2>
+        <p class="description">
+          The mandatory cooldown duration (in minutes) enforced after an active YouTube session timer expires. During cooldown, YouTube cannot be opened or played.
+        </p>
+
+        <form id="settings-form">
+          <div class="field-group">
+            <label for="cooldown-input">Mandatory Cooldown Duration</label>
+            <div class="input-inline">
+              <input 
+                type="number" 
+                id="cooldown-input" 
+                min="1" 
+                max="1440" 
+                step="1" 
+                required 
+              />
+              <span class="unit">minutes</span>
+            </div>
+            <div id="lockout-warning" class="lockout-banner" style="display: none;">
+              <strong>Locked:</strong> Cooldown duration cannot be changed while a session is Active or in Cooldown.
+            </div>
+            <div id="feedback-msg" class="feedback-msg" style="display: none;"></div>
+          </div>
+
+          <div class="btn-group">
+            <button type="submit" id="save-btn" class="btn primary-btn">Save Settings</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="section status-section">
+        <h2>Current Session Status</h2>
+        <div class="status-grid">
+          <div class="status-box">
+            <span class="status-label">Current State</span>
+            <span class="status-value" id="current-state-val">Loading...</span>
+          </div>
+          <div class="status-box">
+            <span class="status-label">Session Remaining</span>
+            <span class="status-value" id="remaining-time-val">--</span>
+          </div>
+          <div class="status-box">
+            <span class="status-label">Cooldown Remaining</span>
+            <span class="status-value" id="cooldown-remaining-val">--</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>YouTube Session Limiter &bull; Chromium Manifest V3</p>
+    </footer>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

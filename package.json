@@ -1,0 +1,11 @@
+{
+  "name": "youtube-session-limiter",
+  "version": "1.0.0",
+  "description": "Chrome/Brave extension to enforce intentional YouTube consumption",
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
