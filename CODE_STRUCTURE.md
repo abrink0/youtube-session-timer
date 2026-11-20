@@ -1,6 +1,6 @@
 # Code Structure & Architecture
 
-This document describes the architectural layout, modules, data flows, and internal mechanisms of the **YouTube Session Limiter** extension.
+This document describes the architectural layout, modules, data flows, and internal mechanisms of the **YouTube Session Timer** extension.
 
 ---
 

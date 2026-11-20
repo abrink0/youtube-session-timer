@@ -1,5 +1,5 @@
 /**
- * YouTube Session Limiter - Background Service Worker
+ * YouTube Session Timer - Background Service Worker
  * Manages the core 3-state machine: IDLE, ACTIVE, COOLDOWN.
  * Enforces focus-based countdown (FR-2.1, FR-2.2) and toolbar badge visibility (FR-2.4).
  */

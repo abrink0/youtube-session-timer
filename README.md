@@ -1,6 +1,8 @@
-# YouTube Session Limiter
+# YouTube Session Timer
 
 A minimal, focused browser extension for **Chromium-based browsers (Chrome and Brave)** built on **Manifest V3**. It enforces intentional YouTube consumption by requiring a time budget before browsing, hiding feed videos that exceed the remaining budget, tracking background audio and active engagement, and imposing a mandatory cooldown when time expires.
+
+Inspired by [Clockwise TV](https://www.clockwisetv.com/), created with Antigravity.
 
 ---
 
@@ -35,14 +37,14 @@ A minimal, focused browser extension for **Chromium-based browsers (Chrome and B
    ```text
    The repository root directory (e.g. ./yt-time-management)
    ```
-5. Pin **YouTube Session Limiter** to your browser toolbar for quick visibility of remaining session time.
+5. Pin **YouTube Session Timer** to your browser toolbar for quick visibility of remaining session time.
 
 ---
 
 ## Configuration
 
 To adjust the mandatory cooldown duration:
-1. Right-click the extension icon in the toolbar and select **Options** (or open `chrome://extensions` $\rightarrow$ YouTube Session Limiter $\rightarrow$ **Details** $\rightarrow$ **Extension options**).
+1. Right-click the extension icon in the toolbar and select **Options** (or open `chrome://extensions` $\rightarrow$ YouTube Session Timer $\rightarrow$ **Details** $\rightarrow$ **Extension options**).
 2. Set your preferred **Mandatory Cooldown Duration** (in minutes; default is 30 minutes).
 3. Click **Save Settings**.
    > *Note: Settings can only be modified while in the `IDLE` state.*

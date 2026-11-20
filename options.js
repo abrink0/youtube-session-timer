@@ -1,5 +1,5 @@
 /**
- * YouTube Session Limiter - Options Page Logic
+ * YouTube Session Timer - Options Page Logic
  */
 
 document.addEventListener('DOMContentLoaded', async () => {

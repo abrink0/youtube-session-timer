@@ -1,6 +1,6 @@
 # Requirements and Design Decisions
 
-This document details the complete functional requirements, technical constraints, and design decisions for the **YouTube Session Limiter** extension.
+This document details the complete functional requirements, technical constraints, and design decisions for the **YouTube Session Timer** extension.
 
 ---
 

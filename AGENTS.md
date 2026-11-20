@@ -1,6 +1,6 @@
 # AGENTS.md
 
-A guide for AI agents and maintainers working on the **YouTube Session Limiter** codebase.
+A guide for AI agents and maintainers working on the **YouTube Session Timer** codebase.
 
 ---
 

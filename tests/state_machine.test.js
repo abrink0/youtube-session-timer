@@ -111,7 +111,7 @@ function sendMessage(msg) {
   });
 }
 
-describe('YouTube Session Limiter - State Machine', () => {
+describe('YouTube Session Timer - State Machine', () => {
   beforeEach(async () => {
     mockStorage = {};
     mockAlarms = {};

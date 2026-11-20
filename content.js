@@ -1,5 +1,5 @@
 /**
- * YouTube Session Limiter - Content Script
+ * YouTube Session Timer - Content Script
  * 
  * Responsibilities:
  * 1. Blocking overlays for IDLE (session prompt) and COOLDOWN states.

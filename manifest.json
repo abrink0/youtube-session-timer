@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Session Limiter",
+  "name": "YouTube Session Timer",
   "version": "1.0.0",
   "description": "Enforce intentional YouTube consumption with session time limits and mandatory cooldowns.",
   "permissions": [
@@ -30,6 +30,6 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "YouTube Session Limiter"
+    "default_title": "YouTube Session Timer"
   }
 }
