@@ -19,6 +19,9 @@
   let currentRemainingTime = 0;
   let currentCooldownEndTime = null;
 
+  // Keepalive port to prevent Service Worker sleep during active YouTube sessions (TC-1)
+  let keepAlivePort = null;
+
   // DOM Elements & References
   let overlayContainer = null;
   let shadowRoot = null;
@@ -466,6 +469,9 @@
 
     const { overlayContainer, shadowRoot } = getOrCreateOverlay();
     overlayContainer.style.display = 'block';
+    if (document.documentElement) {
+      document.documentElement.style.overflow = 'hidden';
+    }
     pauseMedia();
 
     shadowRoot.innerHTML = `
@@ -557,6 +563,9 @@
 
     const { overlayContainer, shadowRoot } = getOrCreateOverlay();
     overlayContainer.style.display = 'block';
+    if (document.documentElement) {
+      document.documentElement.style.overflow = 'hidden';
+    }
     pauseMedia();
 
     const endTime = typeof cooldownEndTime === 'number' ? cooldownEndTime : Date.now();
@@ -607,6 +616,9 @@
    */
   function hideOverlay() {
     currentOverlayView = null;
+    if (document.documentElement) {
+      document.documentElement.style.overflow = '';
+    }
     if (cooldownTimerInterval) {
       clearInterval(cooldownTimerInterval);
       cooldownTimerInterval = null;
@@ -663,6 +675,48 @@
   }
 
   /**
+   * Keepalive port connection to prevent service worker idling during active sessions (TC-1).
+   */
+  function setupKeepAlivePort() {
+    if (currentState === 'ACTIVE') {
+      if (!keepAlivePort && chrome.runtime && chrome.runtime.connect) {
+        try {
+          keepAlivePort = chrome.runtime.connect({ name: 'yt_active_keepalive' });
+          keepAlivePort.onDisconnect.addListener(() => {
+            keepAlivePort = null;
+            if (currentState === 'ACTIVE') {
+              setTimeout(setupKeepAlivePort, 1000);
+            }
+          });
+        } catch {
+          keepAlivePort = null;
+        }
+      }
+    } else {
+      if (keepAlivePort) {
+        try {
+          keepAlivePort.disconnect();
+        } catch {}
+        keepAlivePort = null;
+      }
+    }
+  }
+
+  /**
+   * Anti-tamper DOM check: re-mount overlay if it is detached while in IDLE or COOLDOWN (TC-3).
+   */
+  function ensureOverlayMounted() {
+    if (currentState === 'IDLE' || currentState === 'COOLDOWN') {
+      if (overlayContainer && !overlayContainer.parentElement) {
+        const target = document.body || document.documentElement;
+        if (target) {
+          target.appendChild(overlayContainer);
+        }
+      }
+    }
+  }
+
+  /**
    * Apply incoming state machine data to the UI.
    */
   function applyState(data) {
@@ -671,6 +725,8 @@
     currentState = data.state || 'IDLE';
     currentRemainingTime = typeof data.remainingTime === 'number' ? data.remainingTime : 0;
     currentCooldownEndTime = data.cooldownEndTime || null;
+
+    setupKeepAlivePort();
 
     if (currentState === 'IDLE') {
       stopFeedObserver();
@@ -721,18 +777,41 @@
     }
   });
 
-  // YouTube SPA navigation events
-  window.addEventListener('yt-navigate-finish', () => {
-    if (currentState === 'ACTIVE') {
-      filterAllCards(currentRemainingTime);
+  // Capture-phase media playback guard: immediately halt any video/audio attempt in IDLE or COOLDOWN (FR-4.2)
+  window.addEventListener('play', (e) => {
+    if (currentState === 'IDLE' || currentState === 'COOLDOWN') {
+      try {
+        if (e.target && typeof e.target.pause === 'function') {
+          e.target.pause();
+        }
+      } catch {}
     }
-  });
+  }, true);
 
-  window.addEventListener('popstate', () => {
+  window.addEventListener('playing', (e) => {
+    if (currentState === 'IDLE' || currentState === 'COOLDOWN') {
+      try {
+        if (e.target && typeof e.target.pause === 'function') {
+          e.target.pause();
+        }
+      } catch {}
+    }
+  }, true);
+
+  // YouTube SPA navigation lifecycle hooks (TC-2)
+  function handleSpaNavigation() {
     if (currentState === 'ACTIVE') {
       filterAllCards(currentRemainingTime);
+    } else {
+      ensureOverlayMounted();
+      pauseMedia();
     }
-  });
+  }
+
+  document.addEventListener('yt-navigate-finish', handleSpaNavigation);
+  window.addEventListener('yt-navigate-finish', handleSpaNavigation);
+  document.addEventListener('yt-page-data-updated', handleSpaNavigation);
+  window.addEventListener('popstate', handleSpaNavigation);
 
   // Initial state fetch
   fetchAndApplyState();

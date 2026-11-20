@@ -314,6 +314,17 @@ if (chrome.windows && chrome.windows.onFocusChanged) {
   chrome.windows.onFocusChanged.addListener(onFocusOrTabChanged);
 }
 
+// Handle keepalive port connection from active YouTube tabs (TC-1)
+if (chrome.runtime && chrome.runtime.onConnect) {
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name === 'yt_active_keepalive') {
+      port.onDisconnect.addListener(() => {
+        // Handled automatically by focus checks
+      });
+    }
+  });
+}
+
 // Extension Lifecycle Listeners
 chrome.runtime.onInstalled.addListener(async () => {
   await initializeDefaults();

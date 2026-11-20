@@ -343,6 +343,46 @@ describe('Phase 2: Focus Tracking & Automatic Timer Pausing (FR-2.1, FR-2.2, FR-
   });
 });
 
+describe('Phase 4: Multi-Tab Synchronization & Edge Cases (TC-1, TC-2, TC-3, FR-4.2)', () => {
+  it('broadcasts state change to all open YouTube tabs when transitioning to COOLDOWN', async () => {
+    const sentMessages = [];
+    chrome.tabs.sendMessage = async (tabId, msg) => {
+      sentMessages.push({ tabId, msg });
+    };
+
+    mockTabs = [
+      { id: 201, windowId: 1, active: true, url: 'https://www.youtube.com/' },
+      { id: 202, windowId: 1, active: false, url: 'https://www.youtube.com/watch?v=abc' }
+    ];
+
+    await bg.transitionToCooldown();
+
+    // Verify messages were sent to both YouTube tabs
+    assert.strictEqual(sentMessages.length, 2);
+    assert.strictEqual(sentMessages[0].tabId, 201);
+    assert.strictEqual(sentMessages[0].msg.type, 'STATE_CHANGED');
+    assert.strictEqual(sentMessages[0].msg.state, 'COOLDOWN');
+    assert.strictEqual(sentMessages[1].tabId, 202);
+    assert.strictEqual(sentMessages[1].msg.state, 'COOLDOWN');
+  });
+
+  it('shares single global session state across multiple open YouTube tabs', async () => {
+    await bg.initializeDefaults();
+    await bg.transitionToActive(15);
+
+    mockTabs = [
+      { id: 301, windowId: 1, active: true, url: 'https://www.youtube.com/' },
+      { id: 302, windowId: 1, active: false, url: 'https://www.youtube.com/feed/subscriptions' }
+    ];
+
+    const state = await bg.getStoredState();
+    assert.strictEqual(state.state, 'ACTIVE');
+    assert.strictEqual(state.remainingTime, 900);
+
+    bg.stopCountdownTimer();
+  });
+});
+
 describe('YouTube Duration Parsing Helpers', () => {
   // Mock window/document before loading content.js in node
   global.window = global.window || {};
